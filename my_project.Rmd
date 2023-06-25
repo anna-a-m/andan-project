@@ -1,0 +1,178 @@
+---
+title: "Final project"
+output:
+  pdf_document: 
+    latex_engine: xelatex
+  html_document: default
+date: "2023-06-06"
+---
+
+# Локальные дейктики и жестикуляция
+
+## О проекте
+
+Проект посвящен изучению связи вербального и кинетического каналов коммуникации и их участии в указании.
+
+**Цель проекта** - исследовать данную связь статистически.
+
+Для проекта был выбран датасет SaGA (подробнее в Lücking et al., 2010: Kucherenko, 2021). Он мультимодален, состоит из 25 видео, в которых производится указание пути одним участником другому. Язык датасета - немецкий.
+
+Датасет доступен по [ссылке](https://zenodo.org/record/6546229).
+
+### Источники:
+
+1.  Lücking, A., Bergmann, K., Hahn, F., Kopp, S., & Rieser, H. (2010). [*The Bielefeld Speech and Gesture Alignment Corpus (SaGA)*](https://pub.uni-bielefeld.de/download/2001935/2534579/final_version.pdf). In M. Kipp, J. - P. Martin, P. Paggio, & D. Heylen (Eds.), LREC 2010 Workshop: Multimodal Corpora--Advances in Capturing, Coding and Analyzing Multimodality (pp. 92-98).
+
+2.  Kucherenko, T., Nagy, R., Neff, M., Kjellström, H., & Henter, G. E. (2021). [*Multimodal analysis of the predictability of hand-gesture properties*](https://arxiv.org/pdf/2108.05762.pdf). arXiv preprint arXiv:2108.05762.
+
+## Данные
+
+Исходный датасет включает в себя 1) файлы с аннотациями к видео (.eaf), 2) файлы с аудиальными признаками (.npy), 3) файлы с 3д-моделированием кинетического поведения говорящих (.bvh). Для исследования были взяты только первые файлы, из которых с помощью программы ELAN были получены аннотации нужных слоёв в текстовом виде. Полученный файл далее обрабатывался с помощью языка программирования Python.
+
+Аннотация датасета включает в себя транскрипт речи говорящих (дающего указания и им следующего), лемматизированный и размеченный частеречно, информацию о различных характеристиках жестов отдельно для каждой из рук и также их вместе.
+
+Процесс обработки данных описан в скрипте `preprocessing_data.py`. Он заключался в сопоставлении аннотаций с разных слоев по времени для дальнейшего создания датасета, содержащего произносимые слова (а также их леммы и часть речи) и сопоставленные им жестовые характеристики (тип жеста, фаза жеста, семантика жеста и др. характеристики). Далее для каждой леммы была проведена дополнительная разметка, является ли лексема дейтиком. Для этого был составлен список немецких дейктических единиц, исходя из работы Blühdorn (1994), а также ресурсов 2 и 3. Заметим, что отбирались только единицы, которые относятся к категориям *Zeichendeiktika* и *Lokaldeiktika* у Blühdorn'а, поскольку связь между жестами и местными дейктиками наиболее сильна, а также из-за специфики материала, фокусирующегося на указании на местности.
+
+### Источники:
+
+1.  Blühdorn, H. (1994). [*Deixis und Deiktika in der deutschen Gegenwartssprache*](https://ids-pub.bsz-bw.de/frontdoor/deliver/index/docId/1812/file/Bl%c3%bchdorn_Deixis_und_Deiktika_1994.pdf). Deutsche Sprache, 21(1), 44-62.
+
+2.  [*Präpositionaladverb*](https://gsw.phil-fak.uni-duesseldorf.de/diskurslinguistik/index.php?title=Pr%C3%A4positionaladverb).
+
+3.  [*Deiktisches Adverb*](https://grammis.ids-mannheim.de/systematische-grammatik/524).
+
+Подгружаем данные...
+
+```{r}
+data <- read.csv("https://raw.githubusercontent.com/anna-a-m/andan-project/main/data.csv")
+```
+
+## Анализ статистики
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+str(data)
+```
+
+В полученном датасете **90,776** наблюдений и 11 признаков, первые три из которых описывают речевую составляющую, следующие 7 жестовую. Последний же признак - это наша целевая переменная. Далее посмотрим на её распределение в датасете.
+
+```{r}
+data %>%
+  count(IsDeictic, sort = TRUE, name = "count") %>%
+  mutate(part = round(count/nrow(data), digits=2))
+```
+
+Целевая переменная, дейктик ли лемма, распределена крайне неравномерно. Она составляет только 10-ю часть всего датасета.
+
+Посмотрим, сколько уникальных значений имеют жестовые признаки и каковы эти значения.
+
+```{r}
+data[, 5:length(data)-1] %>%
+  summarise_each(list(n_distinct)) %>%
+  pivot_longer(cols=Phrase:PalmDirection, names_to="Variable", values_to="Distinct_count") %>%
+  arrange(Distinct_count)
+```
+
+```{r}
+data %>%
+  filter(Phase != "") %>%
+  distinct(Phase, IsDeictic) %>%
+  arrange(IsDeictic)
+```
+
+Как видно, по признаку фазы жеста, что дейктики и не-дейктики не различаются. Это логично, поскольку само протекание жеста не должно зависеть от произносимой вербальной составляющей.
+
+```{r}
+data %>%
+  filter(Phrase != "") %>%
+  distinct(Phrase, IsDeictic) %>%
+  arrange(IsDeictic)
+```
+
+В датасете присутствуют достаточно много разных типов жестов как для дейктиков, так и для не-дейктиков. Интересно, что и не-дейктики часто сопровождаются указательными жестами. Посмотрим, какие именно это слова.
+
+```{r}
+data %>%
+  select(Lemma, Phrase, IsDeictic) %>%
+  filter(IsDeictic == 'non-deictic') %>%
+  filter(stringr::str_detect(Phrase, 'deictic')) %>%
+  distinct(Lemma)
+```
+
+Указательные жесты сопровождаются
+
+-   неразмеченными в датасете дейктиками (поскольку либо не являются локальными, либо не входят в выбранную классификацию)
+
+*dies, jen, dann*,
+
+-   местные предлоги,
+
+*hinterm, über*
+
+-   наименования мест,
+
+*Kirche, Park, See*
+
+-   глаголы действия,
+
+*stehen, biegen*
+
+-   междометия и дискурсивные слова
+
+*quasi, aeh*
+
+Сбалансируем наш датасет, поскольку размеры позволяют
+
+```{r}
+non_deictics <- data %>% 
+  filter(IsDeictic == 'non-deictic') %>%
+  filter(!stringr::str_detect(Phrase, 'deictic'))
+
+non_deictics <- non_deictics[sample(1:nrow(non_deictics)), ]
+non_deictics <- non_deictics %>%
+  drop_na()
+non_deictics <- non_deictics[1:8311,]
+```
+
+```{r}
+deictics <- data %>%
+  filter(IsDeictic == 'deictic')
+
+final_df <- bind_rows(deictics, non_deictics)
+
+final_df %>%
+  count(IsDeictic, name="count")
+```
+
+## Визуализации
+
+```{r fig.width = 18, fig.height=15}
+library(vcd)
+mosaic(IsDeictic ~ Phrase, data=final_df,
+       main = "Phrase feature distribution",
+       direction=c("h","v"), spacing=spacing_increase(),
+       gp = gpar(fill=c('lightblue', 'lightgreen')))
+```
+
+На графике заметно, что целевая переменная распределена равномерно. Из-за фильтрации датасета указательных жестов нет в части с не-дейктиками. Среди не-дейктиков также чаще встречаются дискурсивные жесты.
+
+## Модель
+
+```{r}
+library(stats)
+```
+
+```{r}
+final_df <- final_df %>%
+  mutate(across(where(is.character), as.factor))
+fit1 <- glm(Phrase ~ IsDeictic, final_df, family = binomial)
+summary(fit1)
+```
+
+## Выводы
+
+1.  Для дейктиков и не-дейктиков нет различий в фазе жеста.
+2.  Для не-дейктиков более характерны дискурсивные жесты.
